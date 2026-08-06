@@ -225,6 +225,8 @@ def evaluate(data_loader, data, tag='val', show=0):
     mae = mean_absolute_error(y_true, y_pred)
     mape = np.mean(np.abs((y_pred - y_true) / (y_true + 0.00001)))
     mape /= 10000000
+    k = np.abs(y_true) + np.abs(y_pred)
+    smape = np.mean(np.abs((y_pred - y_true) / k)) * 2
     if not args.pcc:
         pcc = pearsonr(y_true,y_pred)[0]
     else:
@@ -237,7 +239,7 @@ def evaluate(data_loader, data, tag='val', show=0):
     global y_pred_t
     y_true_t = y_true_states
     y_pred_t = y_pred_states
-    return float(total_loss / n_samples), mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae
+    return float(total_loss / n_samples), mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae, smape
 
 def train(data_loader, data):
     model.train()
@@ -271,7 +273,7 @@ try:
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train_loss = train(data_loader, data_loader.train)
-        val_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae = evaluate(data_loader, data_loader.val)
+        val_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae, smape = evaluate(data_loader, data_loader.val)
         print('Epoch {:3d}|time:{:5.2f}s|train_loss {:5.8f}|val_loss {:5.8f}'.format(epoch, (time.time() - epoch_start_time), train_loss, val_loss))
         if args.mylog:
             writer.add_scalars('data/loss', {'train': train_loss}, epoch )
@@ -289,6 +291,7 @@ try:
             writer.add_scalars('data/var', {'val': var}, epoch)
             writer.add_scalars('data/var_states', {'val': var_states}, epoch)
             writer.add_scalars('data/peak_mae', {'val': peak_mae}, epoch)
+            writer.add_scalars('data/smape', {'val': smape}, epoch)
         # Save the model if the validation loss is the best we've seen so far.
         if val_loss < best_val:
             best_val = val_loss
@@ -298,8 +301,8 @@ try:
             with open(model_path, 'wb') as f:
                 torch.save(model.state_dict(), f)
             print('Best validation epoch:',epoch, time.ctime());
-            test_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae  = evaluate(data_loader, data_loader.test,tag='test')
-            print('TEST MAE {:5.4f} std {:5.4f} RMSE {:5.4f} RMSEs {:5.4f} PCC {:5.4f} PCCs {:5.4f} MAPE {:5.4f} R2 {:5.4f} R2s {:5.4f} Var {:5.4f} Vars {:5.4f} Peak {:5.4f}'.format( mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae))
+            test_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae, smape  = evaluate(data_loader, data_loader.test,tag='test')
+            print('TEST MAE {:5.4f} std {:5.4f} RMSE {:5.4f} RMSEs {:5.4f} PCC {:5.4f} PCCs {:5.4f} MAPE {:5.4f} sMAPE {:5.4f} R2 {:5.4f} R2s {:5.4f} Var {:5.4f} Vars {:5.4f} Peak {:5.4f}'.format( mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, smape, r2, r2_states, var, var_states, peak_mae))
 
         else:
             bad_counter += 1
@@ -313,15 +316,15 @@ except KeyboardInterrupt:
 model_path = '%s/%s.pt' % (args.save_dir, log_token)
 with open(model_path, 'rb') as f:
     model.load_state_dict(torch.load(f));
-test_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae  = evaluate(data_loader, data_loader.test,tag='test',show=args.result)
+test_loss, mae,std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae, smape  = evaluate(data_loader, data_loader.test,tag='test',show=args.result)
 print('Final evaluation')
 
 
 # record test results.
 if args.record != '':
     with open("result/result.txt","a",encoding="utf-8") as f:
-        f.write('Model: MHGNN, dataset: {}, window: {}, horizon: {}, seed: {}, MAE: {:5.4f}, RMSE: {:5.4f}, PCC: {:5.4f}, lr: {}, GNN_number: {}, filter_num: {}, res: {}, hidR: {}, hidP: {}, hidA: {}, dropout: {}\n'.format(args.dataset, args.window, args.horizon, args.seed, mae, rmse, pcc, args.lr, args.n, args.k, args.res, args.hidR, args.hidP, args.hidA, args.dropout))
-print('TEST MAE {:5.4f} std {:5.4f} RMSE {:5.4f} RMSEs {:5.4f} PCC {:5.4f} PCCs {:5.4f} MAPE {:5.4f} R2 {:5.4f} R2s {:5.4f} Var {:5.4f} Vars {:5.4f} Peak {:5.4f}'.format( mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, r2, r2_states, var, var_states, peak_mae))
+        f.write('Model: MHGNN, dataset: {}, window: {}, horizon: {}, seed: {}, MAE: {:5.4f}, RMSE: {:5.4f}, PCC: {:5.4f}, sMAPE: {:5.4f}, lr: {}, GNN_number: {}, filter_num: {}, res: {}, hidR: {}, hidP: {}, hidA: {}, dropout: {}\n'.format(args.dataset, args.window, args.horizon, args.seed, mae, rmse, pcc, smape, args.lr, args.n, args.k, args.res, args.hidR, args.hidP, args.hidA, args.dropout))
+print('TEST MAE {:5.4f} std {:5.4f} RMSE {:5.4f} RMSEs {:5.4f} PCC {:5.4f} PCCs {:5.4f} MAPE {:5.4f} sMAPE {:5.4f} R2 {:5.4f} R2s {:5.4f} Var {:5.4f} Vars {:5.4f} Peak {:5.4f}'.format( mae, std_mae, rmse, rmse_states, pcc, pcc_states, mape, smape, r2, r2_states, var, var_states, peak_mae))
 
 # test the trained model.
 if args.eval != '':
